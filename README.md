@@ -55,6 +55,10 @@ Not yet enforced (listed so nobody assumes): a block created *after* someone
 joined does not remove them until they rejoin; there is no voice-specific
 privacy or voice-ban flag in the account core to consult.
 
+## Adapters' tests
+
+`github.com/openpak/voice/testkit` starts the real service in process with a stand-in account core (`testkit.New(t, testkit.XboxKey)`), the way the xb services expose a `testkit` to xb-e2e.
+
 ## Run
 
 Ports: 20160 HTTP (`/healthz`, `/metrics`), 20161 gRPC, 20162 reserved.

@@ -2,6 +2,10 @@
 
 `git log` stays the source of truth; this file is the readable summary.
 
+## v0.1.1 — 2026-10-17
+
+- `testkit`: the real service in process (bufconn) with a stand-in account core, for adapters' end-to-end tests.
+
 ## v0.1.0 — 2026-10-17
 
 - First release: the session and authorization plane. In-memory sessions with
