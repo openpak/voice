@@ -87,9 +87,15 @@ const (
 	AppKey  = "testkit-app-key-0123456789"
 )
 
-// New starts a voice service with an "xbox" and an "app" adapter and returns a
-// client for the named adapter (key XboxKey or AppKey) plus the stand-in core.
-func New(t testing.TB, adapterKey string) (voicev1.VoiceClient, *Core) {
+// Service is one running voice service with its stand-in account core.
+type Service struct {
+	Core *Core
+	lis  *bufconn.Listener
+	t    testing.TB
+}
+
+// NewService starts a voice service with an "xbox" and an "app" adapter.
+func NewService(t testing.TB) *Service {
 	t.Helper()
 	c := &Core{friends: map[[2]string]bool{}, blocks: map[[2]string]bool{}, inactive: map[string]bool{}}
 	api := &grpcapi.Server{M: &session.Manager{Auth: c, Announce: c}, Keys: grpcapi.Keys{"xbox": XboxKey, "app": AppKey}}
@@ -98,17 +104,30 @@ func New(t testing.TB, adapterKey string) (voicev1.VoiceClient, *Core) {
 	voicev1.RegisterVoiceServer(gs, api)
 	go gs.Serve(lis)
 	t.Cleanup(gs.Stop)
+	return &Service{Core: c, lis: lis, t: t}
+}
+
+// Client returns a client that presents the given adapter key (XboxKey or AppKey).
+func (s *Service) Client(adapterKey string) voicev1.VoiceClient {
+	s.t.Helper()
 	cc, err := grpc.NewClient("passthrough:///voice", grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) { return lis.Dial() }),
+		grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) { return s.lis.Dial() }),
 		grpc.WithUnaryInterceptor(func(ctx context.Context, m string, req, rep any, cc *grpc.ClientConn, inv grpc.UnaryInvoker, o ...grpc.CallOption) error {
 			return inv(metadata.AppendToOutgoingContext(ctx, "x-internal-key", adapterKey), m, req, rep, cc, o...)
 		}),
-		grpc.WithStreamInterceptor(func(ctx context.Context, d *grpc.StreamDesc, cc *grpc.ClientConn, m string, s grpc.Streamer, o ...grpc.CallOption) (grpc.ClientStream, error) {
-			return s(metadata.AppendToOutgoingContext(ctx, "x-internal-key", adapterKey), d, cc, m, o...)
+		grpc.WithStreamInterceptor(func(ctx context.Context, d *grpc.StreamDesc, cc *grpc.ClientConn, m string, st grpc.Streamer, o ...grpc.CallOption) (grpc.ClientStream, error) {
+			return st(metadata.AppendToOutgoingContext(ctx, "x-internal-key", adapterKey), d, cc, m, o...)
 		}))
 	if err != nil {
-		t.Fatal(err)
+		s.t.Fatal(err)
 	}
-	t.Cleanup(func() { cc.Close() })
-	return voicev1.NewVoiceClient(cc), c
+	s.t.Cleanup(func() { cc.Close() })
+	return voicev1.NewVoiceClient(cc)
+}
+
+// New starts a service and returns a client for one adapter plus the stand-in core.
+func New(t testing.TB, adapterKey string) (voicev1.VoiceClient, *Core) {
+	t.Helper()
+	s := NewService(t)
+	return s.Client(adapterKey), s.Core
 }
