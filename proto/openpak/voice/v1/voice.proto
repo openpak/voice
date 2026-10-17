@@ -1,0 +1,213 @@
+syntax = "proto3";
+
+package openpak.voice.v1;
+
+option go_package = "github.com/openpak/voice/proto/openpak/voice/v1;voicev1";
+
+// The neutral voice session service. It owns who is in which voice session and
+// who may join; it never sees a console protocol. Platform adapters (xb-voice,
+// later ps3/switch/x360 adapters and the phone app's signaling) translate their
+// native flows onto these calls. Accounts are core account ids.
+//
+// Authorization is the account core's answer (friendship, blocks, account
+// status), applied here for every adapter alike. The media plane (SFU, mixing,
+// codec bridging) is NOT part of this contract yet: the participant fields that
+// describe it (transport, codecs) are recorded and returned so adapters and
+// clients can negotiate, nothing here moves audio.
+//
+// Every call carries the adapter's key in the `x-internal-key` metadata. A key
+// is bound to one adapter namespace (xbox, app, ...); an adapter may only change
+// participants it admitted itself, and may only set native references in its own
+// namespace. Reads are open to every adapter.
+service Voice {
+  // Creates a session owned by owner_account and joins the owner. Idempotent per
+  // (adapter, idempotency_key).
+  rpc CreateSession(CreateSessionRequest) returns (CreateSessionResponse);
+  rpc GetSession(GetSessionRequest) returns (GetSessionResponse);
+  // Resolves a session by an adapter's native identifier (for example the
+  // Xbox XNKID in hex under namespace "xbox").
+  rpc GetSessionByNativeRef(GetSessionByNativeRefRequest) returns (GetSessionResponse);
+  // Sessions an account is currently a participant of.
+  rpc ListSessions(ListSessionsRequest) returns (ListSessionsResponse);
+  // Admits an account. Refused with PERMISSION_DENIED (message = the account
+  // core's denial reason) unless it holds an invitation or is allowed to join
+  // the owner, and no present participant has a block with it. Joining twice
+  // renews the lease and updates the participant's description.
+  rpc JoinSession(JoinSessionRequest) returns (JoinSessionResponse);
+  // Renews a participant's lease. Adapters that cannot observe a participant
+  // leaving rely on the lease running out.
+  rpc Heartbeat(HeartbeatRequest) returns (HeartbeatResponse);
+  rpc LeaveSession(LeaveSessionRequest) returns (LeaveSessionResponse);
+  // Ends the session for everybody. Owner only.
+  rpc EndSession(EndSessionRequest) returns (EndSessionResponse);
+  // Removes a participant. Owner only.
+  rpc Kick(KickRequest) returns (KickResponse);
+  rpc SetMuted(SetMutedRequest) returns (SetMutedResponse);
+  // Invites an account: the actor is a participant, the account core allows the
+  // invitation. Recorded and announced on the account core's event stream
+  // (type "voice_invite", subject_id = session id) so each family delivers it in
+  // its own transport.
+  rpc Invite(InviteRequest) returns (InviteResponse);
+  rpc SetNativeRef(SetNativeRefRequest) returns (SetNativeRefResponse);
+  // Follows a session until it ends or the caller cancels. The first message is
+  // a snapshot.
+  rpc WatchSession(WatchSessionRequest) returns (stream SessionEvent);
+}
+
+enum SessionKind {
+  SESSION_KIND_UNSPECIFIED = 0;
+  SESSION_KIND_PARTY = 1;  // free chat
+  SESSION_KIND_GAME = 2;   // attached to a game session
+  SESSION_KIND_NATIVE = 3; // created by a platform's own flow
+}
+
+// How a participant's audio reaches the others.
+enum Transport {
+  TRANSPORT_UNSPECIFIED = 0;
+  // Browser/phone WebRTC (Opus). ICE servers come from the connectivity service.
+  TRANSPORT_WEBRTC = 1;
+  // The console talks to the other consoles itself; the core only knows the
+  // participant is admitted.
+  TRANSPORT_NATIVE_PEER = 2;
+  // The adapter terminates the console's media and exchanges PCM/Opus with the
+  // core's media plane (not implemented).
+  TRANSPORT_NATIVE_BRIDGE = 3;
+}
+
+message Codec {
+  string name = 1;         // "opus", or an adapter's own, e.g. "xvoice"
+  uint32 sample_rate = 2;  // Hz
+  bool can_decode = 3;
+  bool can_encode = 4;
+}
+
+message Participant {
+  string account_id = 1;
+  string adapter = 2;       // namespace of the adapter that admitted it
+  Transport transport = 3;
+  repeated Codec codecs = 4;
+  bool muted = 5;
+  int64 joined_unix = 6;
+  int64 lease_expires_unix = 7;
+}
+
+message Session {
+  string id = 1;
+  SessionKind kind = 2;
+  string owner_account = 3;
+  uint32 max_participants = 4;
+  bool end_when_owner_leaves = 5;
+  map<string, string> native_refs = 6; // namespace -> adapter-defined identifier
+  repeated Participant participants = 7;
+  int64 created_unix = 8;
+  int64 ended_unix = 9; // 0 while live
+  string title = 10;    // optional: the game or dashboard the session belongs to
+}
+
+message CreateSessionRequest {
+  string owner_account = 1;
+  SessionKind kind = 2;
+  uint32 max_participants = 3; // 0 = default 16, capped at 16
+  bool end_when_owner_leaves = 4;
+  string title = 5;
+  Transport transport = 6;     // the owner's
+  repeated Codec codecs = 7;
+  string idempotency_key = 8;
+  // Optional native identifier set atomically with creation under the caller's
+  // namespace, so a lookup can never miss a session that exists.
+  string native_ref = 9;
+}
+message CreateSessionResponse {
+  Session session = 1;
+  bool duplicate = 2;
+}
+
+message GetSessionRequest { string session_id = 1; }
+message GetSessionResponse { Session session = 1; }
+message GetSessionByNativeRefRequest {
+  string namespace = 1;
+  string native_ref = 2;
+}
+
+message ListSessionsRequest { string account_id = 1; }
+message ListSessionsResponse { repeated Session sessions = 1; }
+
+message JoinSessionRequest {
+  string session_id = 1;
+  string account_id = 2;
+  Transport transport = 3;
+  repeated Codec codecs = 4;
+  uint32 lease_seconds = 5; // 0 = default 120, capped at 4h
+}
+message JoinSessionResponse {
+  Session session = 1;
+  bool renewed = 2; // true when the account was already a participant
+}
+
+message HeartbeatRequest {
+  string session_id = 1;
+  string account_id = 2;
+  uint32 lease_seconds = 3;
+}
+message HeartbeatResponse { int64 lease_expires_unix = 1; }
+
+message LeaveSessionRequest {
+  string session_id = 1;
+  string account_id = 2;
+}
+message LeaveSessionResponse {}
+
+message EndSessionRequest {
+  string session_id = 1;
+  string actor_account = 2;
+}
+message EndSessionResponse {}
+
+message KickRequest {
+  string session_id = 1;
+  string actor_account = 2;
+  string account_id = 3;
+}
+message KickResponse {}
+
+message SetMutedRequest {
+  string session_id = 1;
+  string account_id = 2;
+  bool muted = 3;
+}
+message SetMutedResponse {}
+
+message InviteRequest {
+  string session_id = 1;
+  string actor_account = 2;
+  string target_account = 3;
+  uint32 ttl_seconds = 4; // 0 = default 600
+}
+message InviteResponse {
+  bool duplicate = 1; // a live invitation already existed (its expiry is renewed)
+}
+
+message SetNativeRefRequest {
+  string session_id = 1;
+  string namespace = 2; // must equal the caller's own
+  string native_ref = 3;
+}
+message SetNativeRefResponse {}
+
+message WatchSessionRequest { string session_id = 1; }
+
+message SessionEvent {
+  enum Type {
+    TYPE_UNSPECIFIED = 0;
+    TYPE_SNAPSHOT = 1;
+    TYPE_JOINED = 2;
+    TYPE_LEFT = 3;
+    TYPE_MUTED = 4;
+    TYPE_INVITED = 5;
+    TYPE_ENDED = 6;
+  }
+  Type type = 1;
+  string account_id = 2;  // the participant or invitee the event is about
+  string reason = 3;      // for LEFT/ENDED: left, kicked, lease_expired, owner_left, ended, blocked
+  Session session = 4;    // the session after the change
+}
