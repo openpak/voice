@@ -434,26 +434,83 @@ func (m *Manager) Join(ctx context.Context, p JoinParams) (*voicev1.Session, boo
 	return s.proto(), false, nil
 }
 
-// Heartbeat renews a participant's lease.
-func (m *Manager) Heartbeat(adapter, id, account string, leaseSec uint32) (time.Time, error) {
+// Heartbeat renews a participant's lease, re-checking the relationships that
+// admitted it: a block, ban or deactivation since joining ends the stay here,
+// not at some later rejoin. Only hard denials (blocked, inactive) evict — a
+// plain unfriend takes effect at rejoin, not mid-call. An unanswerable core
+// keeps the lease: renewals must survive a core blip (a mass drop is worse
+// than a delayed eviction, and the next heartbeat asks again).
+func (m *Manager) Heartbeat(ctx context.Context, adapter, id, account string, leaseSec uint32) (time.Time, error) {
+	m.mu.Lock()
+	s, err := m.get(id)
+	if err != nil {
+		m.mu.Unlock()
+		return time.Time{}, err
+	}
+	if !s.ended.IsZero() {
+		m.mu.Unlock()
+		return time.Time{}, ErrEnded
+	}
+	p := s.parts[account]
+	if p == nil {
+		m.mu.Unlock()
+		return time.Time{}, ErrNotParticipant
+	}
+	if p.adapter != adapter {
+		m.mu.Unlock()
+		return time.Time{}, ErrForeign
+	}
+	owner := s.owner
+	present := make([]string, 0, len(s.parts))
+	for a := range s.parts {
+		present = append(present, a)
+	}
+	m.mu.Unlock()
+
+	if err := m.recheck(ctx, owner, account, present); err != nil {
+		m.mu.Lock()
+		m.remove(s, account, "authz_revoked")
+		m.mu.Unlock()
+		return time.Time{}, err
+	}
+
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	s, err := m.get(id)
+	s, err = m.get(id)
 	if err != nil {
 		return time.Time{}, err
 	}
 	if !s.ended.IsZero() {
 		return time.Time{}, ErrEnded
 	}
-	p := s.parts[account]
+	p = s.parts[account]
 	if p == nil {
 		return time.Time{}, ErrNotParticipant
 	}
-	if p.adapter != adapter {
-		return time.Time{}, ErrForeign
-	}
 	p.expires = m.now().Add(clampLease(leaseSec))
 	return p.expires, nil
+}
+
+// recheck applies the join-time relationship rules to a participant that is
+// already in: any hard denial ends the stay. Core errors are not denials.
+func (m *Manager) recheck(ctx context.Context, owner, account string, present []string) error {
+	others := map[string]bool{owner: true}
+	for _, a := range present {
+		others[a] = true
+	}
+	delete(others, account)
+	for other := range others {
+		for _, dir := range [2][2]string{{account, other}, {other, account}} {
+			d, err := m.Auth.Check(ctx, dir[0], dir[1], core.Discover)
+			if err != nil {
+				return nil
+			}
+			if !d.Allowed && hard(d.Reason) {
+				return DeniedError{Reason: d.Reason}
+			}
+		}
+	}
+	return nil
 }
 
 // remove drops a participant and applies the owner rules. Callers hold m.mu.

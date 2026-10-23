@@ -224,7 +224,7 @@ func TestLeaseExpiry(t *testing.T) {
 	fc.befriend("a", "b")
 	s := mk(t, m, "a", false)
 	_, _, _ = m.Join(context.Background(), JoinParams{Adapter: "xbox", SessionID: s.Id, Account: "b", LeaseSec: 10})
-	_, _ = m.Heartbeat("xbox", s.Id, "a", 600)
+	_, _ = m.Heartbeat(context.Background(), "xbox", s.Id, "a", 600)
 	ck.t = ck.t.Add(11 * time.Second)
 	m.Reap()
 	got, _ := m.Get(s.Id)
@@ -307,5 +307,54 @@ func TestOwnerOnlyAndWatch(t *testing.T) {
 	}
 	if _, open := <-ch; open {
 		t.Fatal("the stream closes when the session ends")
+	}
+}
+
+func TestHeartbeatEvictsOnBlock(t *testing.T) {
+	m, fc, _ := setup(t)
+	fc.befriend("a", "b")
+	s := mk(t, m, "a", false)
+	if err := join(m, s.Id, "b"); err != nil {
+		t.Fatalf("join: %v", err)
+	}
+	// Mid-call block: the next heartbeat ends b's stay.
+	fc.blocks[[2]string{"a", "b"}] = true
+	if _, err := m.Heartbeat(context.Background(), "xbox", s.Id, "b", 600); err == nil {
+		t.Fatal("blocked participant renewed")
+	}
+	got, _ := m.Get(s.Id)
+	for _, p := range got.Participants {
+		if p.AccountId == "b" {
+			t.Fatal("blocked participant still listed")
+		}
+	}
+}
+
+func TestHeartbeatSurvivesCoreOutage(t *testing.T) {
+	m, fc, _ := setup(t)
+	fc.befriend("a", "b")
+	s := mk(t, m, "a", false)
+	if err := join(m, s.Id, "b"); err != nil {
+		t.Fatalf("join: %v", err)
+	}
+	// An unanswerable core keeps the lease: renewals must survive a blip.
+	fc.down = true
+	if _, err := m.Heartbeat(context.Background(), "xbox", s.Id, "b", 600); err != nil {
+		t.Fatalf("outage dropped the lease: %v", err)
+	}
+}
+
+func TestHeartbeatKeepsUnfriendedButUnblocked(t *testing.T) {
+	m, fc, _ := setup(t)
+	fc.befriend("a", "b")
+	s := mk(t, m, "a", false)
+	if err := join(m, s.Id, "b"); err != nil {
+		t.Fatalf("join: %v", err)
+	}
+	// Plain unfriend is not a block: the stay continues until rejoin.
+	delete(fc.friends, [2]string{"a", "b"})
+	delete(fc.friends, [2]string{"b", "a"})
+	if _, err := m.Heartbeat(context.Background(), "xbox", s.Id, "b", 600); err != nil {
+		t.Fatalf("unfriended participant evicted mid-call: %v", err)
 	}
 }

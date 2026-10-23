@@ -179,7 +179,7 @@ func (s *Server) JoinSession(ctx context.Context, r *voicev1.JoinSessionRequest)
 }
 
 func (s *Server) Heartbeat(ctx context.Context, r *voicev1.HeartbeatRequest) (*voicev1.HeartbeatResponse, error) {
-	exp, err := s.M.Heartbeat(ns(ctx), r.GetSessionId(), r.GetAccountId(), r.GetLeaseSeconds())
+	exp, err := s.M.Heartbeat(ctx, ns(ctx), r.GetSessionId(), r.GetAccountId(), r.GetLeaseSeconds())
 	if err != nil {
 		return nil, mapErr(err)
 	}
