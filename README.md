@@ -9,7 +9,7 @@ adapters (`xb-voice` first; later PS3, Switch, Xbox 360 and the phone app's
 signaling) translate their native flows onto its gRPC contract, so an Xbox
 console and a phone user can be in the same session record.
 
-Design and evidence: workspace `docs/xbox/voice-chat.md` (sections 1 and 5).
+Design and evidence: internal research notes (sections 1 and 5).
 
 ## What exists, what does not
 
