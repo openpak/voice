@@ -10,7 +10,7 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/test/bufconn"
 
-	accountv1 "github.com/openpak/voice/internal/accountpb"
+	accountv1 "github.com/openpak/account-api/openpak/account/v1"
 	"github.com/openpak/voice/internal/core"
 )
 

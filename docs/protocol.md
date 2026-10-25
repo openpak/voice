@@ -36,4 +36,4 @@ Rules (all in `internal/session`):
 
 ## Account core contracts
 
-The account protos in `internal/accountpb` are the account core's `social` and `events` contracts, copied the way `chat` copies them.
+The account core's `social` and `events` contracts come from `github.com/openpak/account-api`.
