@@ -1,3 +1,4 @@
 /voice
 *.env
 !example.env
+next-session.md
