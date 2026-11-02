@@ -37,3 +37,15 @@ Rules (all in `internal/session`):
 ## Account core contracts
 
 The account core's `social` and `events` contracts come from `github.com/openpak/account-api`.
+
+## Limits
+
+| Part | Note |
+| --- | --- |
+| Media plane (SFU, mixing, codec bridging, ICE hand-out) | not implemented, not registered: no RPC pretends to move audio. See [media-plane.md](media-plane.md) |
+| Persistence | none, on purpose: a session is as live as its participants' leases; a restart drops sessions and adapters re-create |
+| WebSocket signaling for the phone app | not here; the website's `internal/voice` keeps serving it |
+
+Not yet enforced: a block created after someone joined does not remove them until they rejoin; there is no voice-specific privacy or voice-ban flag in the account core to consult.
+
+Voice owns who is in which session and who may join; the account core's friendship, block and status answer (`CheckInteraction`) decides at the door. Platform adapters (`xb-voice` first) translate native flows onto this gRPC contract.

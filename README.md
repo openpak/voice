@@ -27,7 +27,6 @@ GOWORK=off go test -race ./...
 
 - [Protocol](docs/protocol.md)
 - [Deploy](docs/deploy.md)
-- [Notes](docs/notes.md)
 - [Media plane](docs/media-plane.md)
 
 ## Licence
