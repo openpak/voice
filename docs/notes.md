@@ -11,13 +11,11 @@ console and a phone user can be in the same session record.
 
 Design and evidence: internal research notes (sections 1 and 5).
 
-## What exists, what does not
+## Limits
 
-| Part | State |
+| Part | Note |
 | --- | --- |
-| Session / participant / invitation plane, authorization, leases, watch | built, unit and bufconn tested (v0.1.0) |
-| Per-adapter keys bound to namespaces, native references (`xbox` -> XNKID) | built |
-| Media plane (SFU, mixing, codec bridging, ICE hand-out) | **not implemented, not registered**: no RPC pretends to move audio. See [`media-plane.md`](media-plane.md) |
+| Media plane (SFU, mixing, codec bridging, ICE hand-out) | not implemented, not registered: no RPC pretends to move audio. See [`media-plane.md`](media-plane.md) |
 | Postgres / persistence | none, on purpose: a session is as live as its participants' leases; a restart drops sessions and adapters re-create |
 | WebSocket signaling for the phone app | not here; the website's `internal/voice` keeps serving it (migration proposal in the workspace doc) |
 

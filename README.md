@@ -26,7 +26,6 @@ GOWORK=off go test -race ./...
 ## Docs
 
 - [Protocol](docs/protocol.md)
-- [Evidence](docs/evidence.md)
 - [Deploy](docs/deploy.md)
 - [Notes](docs/notes.md)
 - [Media plane](docs/media-plane.md)
