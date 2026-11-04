@@ -2,6 +2,13 @@
 
 `git log` stays the source of truth; this file is the readable summary.
 
+## v0.1.2 — 2026-11-04
+
+- Uses `github.com/openpak/account-api` instead of the vendored accountpb copy
+- Relationships are re-checked on every voice heartbeat
+- Images build on GitHub-hosted runners and publish with the org GHCR token; pull-request check workflow
+- docs: README, protocol and deploy only
+
 ## v0.1.1 — 2026-10-17
 
 - `testkit`: the real service in process (bufconn) with a stand-in account core, for adapters' end-to-end tests.
